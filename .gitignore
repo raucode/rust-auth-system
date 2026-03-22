@@ -1,0 +1,33 @@
+# Cargo (Rust)
+target/
+**/*.rs.bk
+Cargo.lock
+
+# Archivos de entorno
+.env
+.env.local
+.env.*.local
+
+# Archivos de editores y IDEs
+.vscode/
+.idea/
+*.sublime-workspace
+*.sublime-project
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+
+# Binarios locales
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Archivos temporales
+*.tmp
+*.swp
