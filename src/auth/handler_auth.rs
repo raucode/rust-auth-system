@@ -25,6 +25,42 @@ pub fn create_jwt(user_id: Uuid) -> Result<String, jsonwebtoken::errors::Error> 
     encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_ref()))
 }
 
+/// Responde si la sesión de esta petición es válida. **No sirve contenido.**
+///
+/// Es la pieza que consume un proxy inverso mediante una subpetición
+/// (`auth_request` en nginx, `forwardAuth` en Traefik): antes de servir una ruta
+/// protegida el proxy pregunta aquí, y con un `200` deja pasar y con un `401`
+/// manda al login.
+///
+/// Con eso, **un servicio que esté detrás del proxy no necesita saber nada de
+/// JWT**: recibe la identidad ya resuelta. El visor de infraestructura no tiene
+/// hoy ni una línea de autenticación, y por esta vía sigue sin necesitarla.
+///
+/// El proxy **tiene que borrar cualquier `X-Auth-*` que llegue de fuera** antes
+/// de reenviar la petición: si un cliente pudiera mandarla, se declararía quien
+/// quisiera. Esa es la regla que sostiene todo el esquema.
+///
+/// Vive bajo `/auth`, que el middleware trata como público, porque hace su propia
+/// validación y su trabajo es precisamente **poder responder que no**.
+pub async fn verify(req: HttpRequest) -> HttpResponse {
+    let Some(cookie) = req.cookie("token") else {
+        return HttpResponse::Unauthorized().finish();
+    };
+
+    match crate::middleware::validar_token(cookie.value()) {
+        Ok(claims) => HttpResponse::Ok()
+            // Los roles todavía no viajan aquí: `Claims` solo lleva `sub`, `exp`
+            // e `iat`, y resolverlos exigiría consultar el RBAC en cada petición.
+            // Cuando se añadan, este es su sitio.
+            .insert_header(("X-Auth-User", claims.sub.to_string()))
+            .finish(),
+        Err(err) => {
+            log::debug!("verify rechazado: {err:?}");
+            HttpResponse::Unauthorized().finish()
+        }
+    }
+}
+
 pub fn create_auth_cookie(token: &str) -> Cookie<'static> {
     let max_age = TimeDuration::minutes(10);
     let expires = time::OffsetDateTime::now_utc() + max_age;
@@ -32,7 +68,7 @@ pub fn create_auth_cookie(token: &str) -> Cookie<'static> {
     Cookie::build("token", token.to_string())
         .path("/")
         .http_only(true)
-        .secure(false)
+        .secure(crate::config::cookie_secure())
         .same_site(SameSite::Lax)
         .max_age(max_age)
         .expires(expires)
@@ -60,7 +96,7 @@ pub fn create_refresh_cookie(token: &str) -> Cookie<'static> {
     Cookie::build("refresh_token", token.to_string())
         .path("/")
         .http_only(true)
-        .secure(false)
+        .secure(crate::config::cookie_secure())
         .same_site(SameSite::Lax)
         .max_age(max_age)
         .expires(expires)
@@ -151,7 +187,7 @@ pub async fn refresh_token(
                 Cookie::build("token", "")
                     .path("/")
                     .http_only(true)
-                    .secure(false)
+                    .secure(crate::config::cookie_secure())
                     .same_site(actix_web::cookie::SameSite::Lax)
                     .finish()
             )

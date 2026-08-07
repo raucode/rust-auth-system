@@ -3,6 +3,7 @@
     //---------------------------------------------
     //  Name                //     Descript
     mod auth;               // Autentificacion
+    mod config;             // Configuracion del entorno
     mod users;              // Usuarios
     mod db;                 // DataBase
     mod middleware;         // Middleware
@@ -34,16 +35,27 @@ use actix_web::middleware::Logger;
             .await
             .expect("Failed to create database pool.");
 
-        println!("🚀 Server started successfully at http://127.0.0.1:8080");
+        let bind_addr = config::bind_addr();
+        let origenes = config::cors_origins();
+
+        // El mensaje dice la dirección real. Antes decía 127.0.0.1 mientras
+        // escuchaba en 0.0.0.0, así que la consola tranquilizaba en falso.
+        println!("🚀 Auth escuchando en http://{bind_addr}");
+        println!("   CORS permitido para: {}", origenes.join(", "));
+        if !config::cookie_secure() {
+            println!("   AVISO: COOKIE_SECURE=false — las cookies van sin Secure (solo desarrollo)");
+        }
 
         HttpServer::new(move || {
-            // --- CONFIGURACIÓN DE CORS ---
-            // Se define aquí para ser aplicada a toda la aplicación.
-            let cors = Cors::default()
-                .allowed_origin("http://localhost:5173")
-                .allowed_origin("http://192.168.100.5:5173")
-                .allowed_origin("http://192.168.100.5:8080")
-                .allowed_origin("http://192.168.56.1:5173") // La URL de tu frontend
+            // --- CORS ---
+            // Los orígenes vienen del entorno: son dato de despliegue, no del
+            // programa. Antes estaban escritos aquí, y dos eran IPs de una red
+            // doméstica concreta.
+            let mut cors = Cors::default();
+            for origen in &origenes {
+                cors = cors.allowed_origin(origen);
+            }
+            let cors = cors
                 .allowed_methods(vec!["GET", "POST", "PUT", "DELETE", "PATCH"])
                 .allowed_headers(vec![
                 http::header::CONTENT_TYPE,
@@ -73,14 +85,18 @@ use actix_web::middleware::Logger;
                 .service(
                     web::scope("/auth")
                         .configure(user_routes)
-
+                        // La consulta que hace un proxy inverso antes de servir
+                        // una ruta protegida. Va aquí, entre las públicas, porque
+                        // valida por su cuenta y su trabajo incluye poder
+                        // responder 401.
+                        .route("/verify", web::get().to(auth::handler_auth::verify))
                 )
-                
+
                 // Registrar el scope de rutas protegidas
                 .service(protected_scope)
 
         })
-        .bind("0.0.0.0:8080")?
+        .bind(&bind_addr)?
         .run()
         .await
     }

@@ -15,6 +15,33 @@ pub enum AuthMode {
     Optional,
 }
 
+/// Valida un token de acceso y devuelve sus claims.
+///
+/// Estaba escrita dentro de `call`, y ahora vive aquí porque tiene **dos
+/// consumidores**: el middleware, que protege las rutas de este servicio, y el
+/// endpoint `/auth/verify`, que responde a la pregunta de un proxy inverso.
+/// Duplicarla habría dejado dos criterios de «token válido» que pueden divergir
+/// — y el día que divergen, una ruta protegida y la puerta de entrada dejan de
+/// estar de acuerdo sobre quién puede pasar.
+pub fn validar_token(token: &str) -> Result<Claims, jsonwebtoken::errors::Error> {
+    // Las comillas se recortan porque algunos clientes guardan el valor de la
+    // cookie entre comillas y el token deja de decodificarse por un carácter.
+    let token = token.trim().trim_matches('"');
+
+    let secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
+
+    let mut validation = Validation::new(Algorithm::HS256);
+    validation.validate_exp = true;
+    validation.leeway = 30;
+
+    decode::<Claims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )
+    .map(|data| data.claims)
+}
+
 pub struct AuthMiddleware {
     pub mode: AuthMode,
 }
@@ -84,12 +111,7 @@ where
             }
 
             // 🔐 3) A partir de aquí, JWT normal
-            let token = req.cookie("token").map(|c| {
-                c.value()
-                    .trim()
-                    .trim_matches('"')
-                    .to_string()
-            });
+            let token = req.cookie("token").map(|c| c.value().to_string());
 
             let Some(token) = token else {
                 if matches!(mode, AuthMode::Required) {
@@ -102,21 +124,9 @@ where
                 return Ok(res.map_into_left_body());
             };
 
-            let secret = env::var("JWT_SECRET")
-                .expect("JWT_SECRET must be set");
-
-            let mut validation = Validation::new(Algorithm::HS256);
-            validation.validate_exp = true;
-            validation.leeway = 30;
-
-            match decode::<Claims>(
-                &token,
-                &DecodingKey::from_secret(secret.as_bytes()),
-                &validation,
-            ) {
-                Ok(data) => {
-                    let mut req = req;
-                    req.extensions_mut().insert(data.claims.sub);
+            match validar_token(&token) {
+                Ok(claims) => {
+                    req.extensions_mut().insert(claims.sub);
                     let res = service.call(req).await?;
                     Ok(res.map_into_left_body())
                 }
