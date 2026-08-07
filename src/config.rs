@@ -46,7 +46,45 @@ pub fn cors_origins() -> Vec<String> {
 ///
 /// Para trabajar en local sin HTTPS: `COOKIE_SECURE=false`.
 pub fn cookie_secure() -> bool {
-    env::var("COOKIE_SECURE")
-        .map(|v| !matches!(v.trim().to_ascii_lowercase().as_str(), "false" | "0" | "no"))
-        .unwrap_or(true)
+    bandera("COOKIE_SECURE", true)
+}
+
+/// Si las cookies de sesión llevan el atributo `HttpOnly`.
+///
+/// **Por defecto `true`.** `HttpOnly` es lo que impide que el JavaScript de la
+/// página lea la cookie, y con ella la sesión: sin él, cualquier script que se
+/// cuele —un XSS, una dependencia comprometida— puede llevarse la sesión de quien
+/// esté conectado, y no hay forma de detectarlo desde el servidor.
+///
+/// Se hace configurable porque a veces se necesita durante el desarrollo, pero
+/// conviene saber que **no hace falta para saber si hay sesión**: eso lo resuelve
+/// `GET /auth/verify`, que es como lo hacen los dos frontends de `web/` y como lo
+/// hará el proxy inverso.
+///
+/// Para desactivarlo: `COOKIE_HTTPONLY=false`.
+pub fn cookie_httponly() -> bool {
+    bandera("COOKIE_HTTPONLY", true)
+}
+
+/// Lee una bandera del entorno. Todo lo que no sea una negación explícita cuenta
+/// como verdadero, para que un `COOKIE_SECURE=si` no desactive nada por sorpresa.
+fn bandera(nombre: &str, por_defecto: bool) -> bool {
+    match env::var(nombre) {
+        Ok(v) => !matches!(v.trim().to_ascii_lowercase().as_str(), "false" | "0" | "no"),
+        Err(_) => por_defecto,
+    }
+}
+
+/// Credenciales del administrador inicial, si se han configurado.
+///
+/// Existe para resolver el problema del primer usuario: sin nadie dado de alta no
+/// se puede entrar, y sin entrar no se puede dar de alta a nadie. Ver
+/// `crate::bootstrap`.
+pub fn admin_inicial() -> Option<(String, String)> {
+    let email = env::var("ADMIN_EMAIL").ok()?;
+    let password = env::var("ADMIN_PASSWORD").ok()?;
+    if email.trim().is_empty() || password.trim().is_empty() {
+        return None;
+    }
+    Some((email.trim().to_string(), password))
 }

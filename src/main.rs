@@ -3,6 +3,7 @@
     //---------------------------------------------
     //  Name                //     Descript
     mod auth;               // Autentificacion
+    mod bootstrap;          // Administrador inicial
     mod config;             // Configuracion del entorno
     mod users;              // Usuarios
     mod db;                 // DataBase
@@ -34,6 +35,10 @@ use actix_web::middleware::Logger;
         let pool = db::connect()
             .await
             .expect("Failed to create database pool.");
+
+        // El administrador inicial, antes de escuchar: si hace falta crearlo, mejor
+        // que esté antes de que llegue la primera petición de login.
+        bootstrap::crear_admin_si_falta(&pool).await;
 
         let bind_addr = config::bind_addr();
         let origenes = config::cors_origins();

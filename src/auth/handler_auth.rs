@@ -67,7 +67,7 @@ pub fn create_auth_cookie(token: &str) -> Cookie<'static> {
 
     Cookie::build("token", token.to_string())
         .path("/")
-        .http_only(true)
+        .http_only(crate::config::cookie_httponly())
         .secure(crate::config::cookie_secure())
         .same_site(SameSite::Lax)
         .max_age(max_age)
@@ -98,7 +98,7 @@ pub fn create_refresh_cookie(token: &str) -> Cookie<'static> {
 
     Cookie::build("refresh_token", token.to_string())
         .path("/")
-        .http_only(true)
+        .http_only(crate::config::cookie_httponly())
         .secure(crate::config::cookie_secure())
         .same_site(SameSite::Lax)
         .max_age(max_age)
@@ -189,7 +189,7 @@ pub async fn refresh_token(
             .cookie(
                 Cookie::build("token", "")
                     .path("/")
-                    .http_only(true)
+                    .http_only(crate::config::cookie_httponly())
                     .secure(crate::config::cookie_secure())
                     .same_site(actix_web::cookie::SameSite::Lax)
                     .finish()
