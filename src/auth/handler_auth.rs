@@ -79,7 +79,10 @@ pub fn create_auth_cookie(token: &str) -> Cookie<'static> {
 pub fn generate_refresh_token() -> (String, String) {
     let mut bytes = [0u8; 64];
     rand::thread_rng().fill_bytes(&mut bytes);
-    let token = base64::encode(bytes);
+    // `base64::encode` quedó deprecada: en 0.22 se codifica a través de un
+    // «engine» explícito, para que el alfabeto y el relleno sean una elección y no
+    // un valor por defecto oculto.
+    let token = BASE64_STANDARD.encode(bytes);
 
     let mut hasher = Sha256::new();
     hasher.update(&token);

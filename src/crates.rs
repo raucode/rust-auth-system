@@ -47,6 +47,9 @@ pub use rand::RngCore;
 // Sha2
 pub use sha2::{Sha256, Digest};
 
+// Base64 — el trait `Engine` tiene que estar en ámbito para poder codificar.
+pub use base64::prelude::{BASE64_STANDARD, Engine};
+
 // SQLx
 pub use sqlx::{
     PgPool,

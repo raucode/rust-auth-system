@@ -12,7 +12,7 @@ actix-cors = "0.7.0"
 tokio = { version = "1", features = ["full"] }
 rand = "0.8"
 sha2 = "0.10"
-base64 = "0.21"
+base64 = "0.22"
 # Serialización
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -24,7 +24,12 @@ jsonwebtoken = "9"
 bcrypt = "0.15"
 
 # Base de datos
-sqlx = { version = "0.7", features = ["postgres", "runtime-tokio", "macros", "uuid", "chrono", "json", "bigdecimal", "rust_decimal"] }
+#
+# 0.8 y no 0.7: la 0.7.4 arrastraba código que una versión futura de Rust va a
+# rechazar (`cargo report future-incompatibilities`), y además alinea con el visor
+# de infraestructura, que ya usa 0.8.6 — dos servicios que van a hablar de la
+# misma base no deberían diferir en el driver.
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "macros", "uuid", "chrono", "json", "bigdecimal", "rust_decimal"] }
 # Utilidades y otros
 dotenv = "0.15"
 futures = "0.3"
@@ -34,7 +39,11 @@ time = "0.3"
 
 rust_decimal = "1"
 rust_decimal_macros = "1"
-bigdecimal = { version = "0.3", features = ["serde"] }
+# 0.4 y no 0.3: la feature `bigdecimal` de sqlx 0.8 se compila contra 0.4, y con
+# dos versiones del mismo tipo en el árbol los traits `Decode`/`Type` no son los
+# mismos — el error habla de que `BigDecimal` no implementa `FromRow`, cuando lo
+# que pasa es que implementa el de la otra versión.
+bigdecimal = { version = "0.4", features = ["serde"] }
 
 # Dependencias de documentación
 

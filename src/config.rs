@@ -26,7 +26,10 @@ pub fn bind_addr() -> String {
 /// dato de despliegue, no del programa.
 pub fn cors_origins() -> Vec<String> {
     env::var("CORS_ORIGINS")
-        .unwrap_or_else(|_| "http://localhost:5173".to_string())
+        // El defecto son los dos frontends de `web/`: la pantalla de sesión y el
+        // cliente de pruebas. Están en puertos distintos a propósito, para que el
+        // CORS con credenciales se ejercite en desarrollo y no en el despliegue.
+        .unwrap_or_else(|_| "http://127.0.0.1:5173,http://127.0.0.1:5174".to_string())
         .split(',')
         .map(|o| o.trim().to_string())
         .filter(|o| !o.is_empty())

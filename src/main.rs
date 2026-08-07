@@ -63,6 +63,12 @@ use actix_web::middleware::Logger;
                 http::header::ACCEPT,
             ])
                 .supports_credentials() // MUY IMPORTANTE para el login con cookies
+                // Sin exponerla, el navegador recibe el 200 de `/auth/verify` pero
+                // no puede leer quién es: CORS oculta por defecto toda cabecera de
+                // respuesta que no sea de una lista corta. Un proxy inverso no lo
+                // sufre —lee la respuesta directa, sin CORS de por medio— así que
+                // esto es solo para que un cliente de navegador pueda usarla.
+                .expose_headers(vec!["X-Auth-User"])
                 .max_age(3600);
 
             // Scope para rutas protegidas que requieren autenticación.

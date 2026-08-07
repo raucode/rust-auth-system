@@ -1,7 +1,14 @@
 # Cargo (Rust)
 target/
 **/*.rs.bk
-Cargo.lock
+
+# Cargo.lock SÍ se versiona: esto es un binario, no una biblioteca. Sin él, dos
+# máquinas resuelven dependencias distintas y «en la mía funciona» deja de poder
+# comprobarse.
+
+# Frontends de prueba
+web/node_modules/
+web/*/dist/
 
 # Archivos de entorno
 .env
