@@ -40,18 +40,21 @@ use actix_web::middleware::Logger;
         // que esté antes de que llegue la primera petición de login.
         bootstrap::crear_admin_si_falta(&pool).await;
 
-        let bind_addr = config::bind_addr();
+        let direcciones = config::bind_addrs();
         let origenes = config::cors_origins();
 
-        // El mensaje dice la dirección real. Antes decía 127.0.0.1 mientras
+        // El mensaje dice las direcciones reales. Antes decía 127.0.0.1 mientras
         // escuchaba en 0.0.0.0, así que la consola tranquilizaba en falso.
-        println!("🚀 Auth escuchando en http://{bind_addr}");
+        println!("🚀 Auth escuchando en: {}", direcciones.join(", "));
         println!("   CORS permitido para: {}", origenes.join(", "));
         if !config::cookie_secure() {
             println!("   AVISO: COOKIE_SECURE=false — las cookies van sin Secure (solo desarrollo)");
         }
+        if !config::cookie_httponly() {
+            println!("   AVISO: COOKIE_HTTPONLY=false — el JavaScript de la página puede leer la sesión");
+        }
 
-        HttpServer::new(move || {
+        let mut servidor = HttpServer::new(move || {
             // --- CORS ---
             // Los orígenes vienen del entorno: son dato de despliegue, no del
             // programa. Antes estaban escritos aquí, y dos eran IPs de una red
@@ -106,8 +109,14 @@ use actix_web::middleware::Logger;
                 // Registrar el scope de rutas protegidas
                 .service(protected_scope)
 
-        })
-        .bind(&bind_addr)?
-        .run()
-        .await
+        });
+
+        // Se escucha en todas las direcciones configuradas, no en una: los dos
+        // loopbacks hacen falta para que `localhost` funcione resuelva a IPv4 o a
+        // IPv6, y en Windows resuelve primero a IPv6.
+        for direccion in &direcciones {
+            servidor = servidor.bind(direccion)?;
+        }
+
+        servidor.run().await
     }

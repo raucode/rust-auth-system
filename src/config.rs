@@ -7,16 +7,27 @@
 
 use std::env;
 
-/// Dirección en la que escucha el servidor.
+/// Direcciones en las que escucha el servidor, separadas por comas.
 ///
-/// **Por defecto `127.0.0.1:8080`, no `0.0.0.0:8080`.** Antes escuchaba en todas
-/// las interfaces, así que cualquiera en la misma red alcanzaba el servicio en
-/// cuanto arrancaba — y el mensaje de arranque decía `127.0.0.1`, con lo que ni
-/// mirando la consola se notaba.
+/// **Por defecto los dos loopbacks, `127.0.0.1:8081` y `[::1]:8081`, y ninguna
+/// interfaz de red.** Antes escuchaba en `0.0.0.0`, así que cualquiera en la misma
+/// red alcanzaba el servicio en cuanto arrancaba — y el mensaje de arranque decía
+/// `127.0.0.1`, con lo que ni mirando la consola se notaba.
 ///
-/// Publicarlo hacia fuera es ahora una decisión explícita: `BIND_ADDR=0.0.0.0:8080`.
-pub fn bind_addr() -> String {
-    env::var("BIND_ADDR").unwrap_or_else(|_| "127.0.0.1:8080".to_string())
+/// Son **dos** y no una porque en Windows `localhost` resuelve primero a `::1` y
+/// después a `127.0.0.1`: escuchando solo en IPv4, un navegador que pida
+/// `http://localhost:8081` se encuentra la puerta cerrada sin más explicación que
+/// «no se pudo conectar». Cubrir los dos loopbacks no expone nada hacia fuera.
+///
+/// El 8081 y no el 8080 porque el visor de infraestructura usa el 8080.
+/// Publicarlo hacia la red es una decisión explícita: `BIND_ADDR=0.0.0.0:8081`.
+pub fn bind_addrs() -> Vec<String> {
+    env::var("BIND_ADDR")
+        .unwrap_or_else(|_| "127.0.0.1:8081,[::1]:8081".to_string())
+        .split(',')
+        .map(|a| a.trim().to_string())
+        .filter(|a| !a.is_empty())
+        .collect()
 }
 
 /// Orígenes que se aceptan en CORS, separados por comas.
@@ -26,10 +37,22 @@ pub fn bind_addr() -> String {
 /// dato de despliegue, no del programa.
 pub fn cors_origins() -> Vec<String> {
     env::var("CORS_ORIGINS")
-        // El defecto son los dos frontends de `web/`: la pantalla de sesión y el
-        // cliente de pruebas. Están en puertos distintos a propósito, para que el
-        // CORS con credenciales se ejercite en desarrollo y no en el despliegue.
-        .unwrap_or_else(|_| "http://127.0.0.1:5173,http://127.0.0.1:5174".to_string())
+        // El defecto son los dos frontends de `web/` **por sus dos nombres**: la
+        // pantalla de sesión y el cliente de pruebas, en `localhost` y en
+        // `127.0.0.1`.
+        //
+        // Los cuatro y no dos porque para el navegador `http://localhost:5173` y
+        // `http://127.0.0.1:5173` son **orígenes distintos**: abrir la página por
+        // el nombre que no está en la lista da un fallo de CORS que se parece
+        // exactamente a que el servidor esté caído.
+        //
+        // Están en puertos distintos a propósito, para que el CORS con credenciales
+        // se ejercite en desarrollo y no en el despliegue.
+        .unwrap_or_else(|_| {
+            "http://localhost:5173,http://localhost:5174,\
+             http://127.0.0.1:5173,http://127.0.0.1:5174"
+                .to_string()
+        })
         .split(',')
         .map(|o| o.trim().to_string())
         .filter(|o| !o.is_empty())
