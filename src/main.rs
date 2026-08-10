@@ -42,6 +42,13 @@ use actix_web::middleware::Logger;
         // que esté antes de que llegue la primera petición de login.
         bootstrap::crear_admin_si_falta(&pool).await;
 
+        // La matriz rol → permisos, compartida por todo el proceso y cargada antes
+        // de atender a nadie: así la primera petición no paga la espera, y un
+        // problema de conexión se ve en el arranque en vez de disfrazado más tarde
+        // de «este usuario no tiene permisos».
+        let matriz = web::Data::new(rbac::matriz::Matriz::nueva());
+        matriz.precargar(&pool).await;
+
         let direcciones = config::bind_addrs();
         let origenes = config::cors_origins();
 
@@ -102,8 +109,12 @@ use actix_web::middleware::Logger;
             App::new()
                 // 1. Aplicamos el middleware de CORS PRIMERO, para que afecte a todas las rutas.
                 .wrap(Logger::default())
-                .wrap(cors) 
+                .wrap(cors)
                 .app_data(web::Data::new(pool.clone()))
+                // La misma matriz para todos los trabajadores: `Data` clona el
+                // puntero, no el contenido, así que no hay una copia por hilo que
+                // caduque por su cuenta.
+                .app_data(matriz.clone())
                 
                 // Rutas públicas (sin middleware de autenticación)
                 .service(

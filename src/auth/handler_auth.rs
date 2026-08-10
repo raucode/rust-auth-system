@@ -6,26 +6,27 @@ pub struct Claims {
     pub exp: usize,
     pub iat: usize,
 
-    // Qué es y qué puede hacer quien trae este token. Se resuelven contra la base
-    // al entrar y al refrescar; a partir de ahí viajan firmados aquí dentro y
-    // nadie vuelve a consultar el RBAC hasta el siguiente refresco. El porqué y su
-    // precio, en la cabecera de `crate::rbac`.
+    // **Qué es esta persona, no qué puede hacer.**
+    //
+    // Los roles van aquí porque son suyos y cambian rara vez. Los permisos ya no:
+    // se derivan de estos roles con la matriz que `crate::rbac::matriz` mantiene
+    // en memoria, y por dos razones.
+    //
+    // La primera es tamaño: el token es una cookie y viaja en **cada** petición,
+    // imágenes incluidas. Con la lista de permisos dentro ocupaba 465 bytes y
+    // crecía con el catálogo; sin ella son unos 250 y no crece.
+    //
+    // La segunda importa más: mientras los permisos vivieron aquí dentro,
+    // **retirarle uno a un rol no surtía efecto hasta que caducaba el último token
+    // que lo llevaba**, o sea hasta diez minutos después. La matriz es política de
+    // la empresa: si se decide que `user` ya no edita, deja de editar ahora.
     //
     // `serde(default)` no es adorno: sin él, **todos los tokens emitidos antes de
     // este cambio dejarían de decodificar** y toda sesión abierta se caería a 401
-    // en el momento de desplegar. Con él, un token viejo entra con las listas
-    // vacías y se completa solo en el primer refresco.
+    // al desplegar. Con él, un token viejo sigue valiendo y sus permisos se
+    // recalculan igual, que es justo lo que ahora se hace con todos.
     #[serde(default)]
     pub roles: Vec<String>,
-    #[serde(default)]
-    pub perms: Vec<String>,
-}
-
-impl Claims {
-    /// Si esta sesión tiene un permiso concreto.
-    pub fn puede(&self, permiso: &str) -> bool {
-        self.perms.iter().any(|p| p == permiso)
-    }
 }
 
 pub fn create_jwt(
@@ -37,13 +38,7 @@ pub fn create_jwt(
     let iat = now.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs() as usize;
     let exp = iat + (60 * 10); // 10 minutos
 
-    let claims = Claims {
-        sub: user_id,
-        iat,
-        exp,
-        roles: rbac.roles.clone(),
-        perms: rbac.permisos.clone(),
-    };
+    let claims = Claims { sub: user_id, iat, exp, roles: rbac.roles.clone() };
     encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_ref()))
 }
 
@@ -64,27 +59,44 @@ pub fn create_jwt(
 ///
 /// Vive bajo `/auth`, que el middleware trata como público, porque hace su propia
 /// validación y su trabajo es precisamente **poder responder que no**.
-pub async fn verify(req: HttpRequest) -> HttpResponse {
+pub async fn verify(
+    req: HttpRequest,
+    pool: web::Data<PgPool>,
+    matriz: web::Data<crate::rbac::matriz::Matriz>,
+) -> HttpResponse {
     let Some(cookie) = req.cookie("token") else {
         return HttpResponse::Unauthorized().finish();
     };
 
-    match crate::middleware::validar_token(cookie.value()) {
-        Ok(claims) => HttpResponse::Ok()
-            .insert_header(("X-Auth-User", claims.sub.to_string()))
-            // Roles y permisos viajan separados por coma porque una cabecera HTTP
-            // es texto plano: es el formato que nginx sabe reenviar tal cual y que
-            // cualquier servicio de detrás puede partir sin traerse un parser de
-            // JSON. Salen de los claims ya validados, así que esto **no consulta
-            // la base** — y este endpoint lo llama el proxy en cada petición.
-            .insert_header(("X-Auth-Roles", claims.roles.join(",")))
-            .insert_header(("X-Auth-Perms", claims.perms.join(",")))
-            .finish(),
+    let claims = match crate::middleware::validar_token(cookie.value()) {
+        Ok(claims) => claims,
         Err(err) => {
             log::debug!("verify rechazado: {err:?}");
-            HttpResponse::Unauthorized().finish()
+            return HttpResponse::Unauthorized().finish();
         }
-    }
+    };
+
+    // Los permisos se derivan de los roles del token con la matriz **en memoria**.
+    //
+    // Que esto no consulte la base es la condición de la que depende todo: a este
+    // endpoint lo llama el proxy en cada petición HTTP, imágenes incluidas. La
+    // matriz se recarga sola cada treinta segundos, así que un cambio de política
+    // se nota en medio minuto sin costar una consulta por icono.
+    let permisos = matriz.permisos_de(pool.get_ref(), &claims.roles).await;
+
+    HttpResponse::Ok()
+        .insert_header(("X-Auth-User", claims.sub.to_string()))
+        // Separados por coma porque una cabecera HTTP es texto plano: es lo que
+        // nginx reenvía tal cual y lo que cualquier servicio de detrás puede
+        // partir sin traerse un parser de JSON.
+        //
+        // Van los dos, y los permisos **ya resueltos**, a propósito. Mandar solo
+        // el rol obligaría a cada servicio a saber qué concede `user`, y entonces
+        // la política estaría repetida en todos ellos — que es exactamente lo que
+        // un RBAC centralizado existe para evitar.
+        .insert_header(("X-Auth-Roles", claims.roles.join(",")))
+        .insert_header(("X-Auth-Perms", permisos.join(",")))
+        .finish()
 }
 
 pub fn create_auth_cookie(token: &str) -> Cookie<'static> {

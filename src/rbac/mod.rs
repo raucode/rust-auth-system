@@ -21,5 +21,6 @@
 //! PostgreSQL.
 
 pub mod handler_rbac;
+pub mod matriz;
 pub mod repositories_rbac;
 pub mod routes_rbac;

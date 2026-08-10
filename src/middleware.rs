@@ -164,10 +164,32 @@ where
 
             match validar_token(&token) {
                 Ok(claims) => {
-                    // La comprobación de permiso va **después** de validar la
-                    // firma y nunca antes: sin token válido, lo que dijeran los
-                    // permisos sería lo que el cliente quisiera escribir.
-                    if let Some(permiso) = requiere.filter(|p| !claims.puede(p)) {
+                    // Los permisos **ya no vienen en el token**: se derivan de sus
+                    // roles con la matriz en memoria, igual que hace
+                    // `/auth/verify`. Los dos caminos usan la misma fuente a
+                    // propósito — el día que difieran, una ruta protegida y la
+                    // puerta de entrada dejarían de estar de acuerdo sobre quién
+                    // puede pasar.
+                    let permisos = match (
+                        req.app_data::<actix_web::web::Data<PgPool>>(),
+                        req.app_data::<actix_web::web::Data<crate::rbac::matriz::Matriz>>(),
+                    ) {
+                        (Some(pool), Some(matriz)) => {
+                            matriz.permisos_de(pool.get_ref(), &claims.roles).await
+                        }
+                        // Faltaría registrar el estado en `App::new()`. Sin poder
+                        // resolver permisos no se inventa ninguno: es un fallo de
+                        // montaje y tiene que doler, no colarse.
+                        _ => {
+                            log::error!("falta el pool o la matriz en app_data: sin permisos");
+                            Vec::new()
+                        }
+                    };
+
+                    // La comprobación va **después** de validar la firma y nunca
+                    // antes: sin token válido, lo que dijeran los roles sería lo
+                    // que el cliente quisiera escribir.
+                    if let Some(permiso) = requiere.filter(|p| !permisos.iter().any(|x| x == *p)) {
                         log::info!("403 en {path}: el usuario {} no tiene {permiso}", claims.sub);
                         let res = req.into_response(
                             HttpResponse::Forbidden().body(format!("Falta el permiso {permiso}")),
@@ -179,7 +201,7 @@ where
                     req.extensions_mut().insert(Identidad {
                         user_id: claims.sub,
                         roles: claims.roles,
-                        permisos: claims.perms,
+                        permisos,
                     });
                     let res = service.call(req).await?;
                     Ok(res.map_into_left_body())
