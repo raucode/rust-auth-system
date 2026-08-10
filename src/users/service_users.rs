@@ -100,8 +100,20 @@ pub async fn register_user_service(
     // 🔐 AUTH (TU IMPLEMENTACIÓN)
     // =========================
 
-    // Access token
-    let access_token = auth::handler_auth::create_jwt(user.id)
+    // Access token.
+    //
+    // Un usuario recién registrado **no tiene ningún rol todavía**, así que aquí
+    // se carga igualmente en vez de dar por hecho que está vacío: si algún día el
+    // alta concede un rol por defecto, esto ya lo recoge sin que nadie se acuerde
+    // de volver.
+    let rbac = crate::rbac::repositories_rbac::cargar(pool, user.id)
+        .await
+        .map_err(|e| {
+            log::error!("no se pudo cargar el RBAC al registrar: {e}");
+            actix_web::error::ErrorInternalServerError("db error")
+        })?;
+
+    let access_token = auth::handler_auth::create_jwt(user.id, &rbac)
         .map_err(|_| actix_web::error::ErrorInternalServerError("jwt error"))?;
 
     let access_cookie = auth::handler_auth::create_auth_cookie(&access_token);
@@ -152,8 +164,16 @@ pub async fn login_user_service(
         return Err(actix_web::error::ErrorUnauthorized("Invalid credentials"));
     }
 
+    // Roles y permisos, resueltos una vez y firmados dentro del token.
+    let rbac = crate::rbac::repositories_rbac::cargar(pool, user.id)
+        .await
+        .map_err(|e| {
+            log::error!("no se pudo cargar el RBAC al entrar: {e}");
+            actix_web::error::ErrorInternalServerError("Error en la base de datos")
+        })?;
+
     // Tokens
-    let token = create_jwt(user.id)
+    let token = create_jwt(user.id, &rbac)
         .map_err(|_| actix_web::error::ErrorInternalServerError("Token error"))?;
     let access_cookie = create_auth_cookie(&token);
     let expires_at = Utc::now() + chrono::Duration::days(30);
@@ -168,6 +188,8 @@ Ok(AuthResponse {
     user_json: serde_json::json!({
         "user_id": user.id,
         "user_type": user.user_type,
+        "roles": rbac.roles,
+        "permisos": rbac.permisos,
     }),
 })
 }

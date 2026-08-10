@@ -6,6 +6,7 @@
     mod bootstrap;          // Administrador inicial
     mod config;             // Configuracion del entorno
     mod users;              // Usuarios
+    mod rbac;               // Roles y permisos
     mod db;                 // DataBase
     mod middleware;         // Middleware
     mod crates;             // Imports Globales
@@ -19,8 +20,8 @@
     use dotenv::dotenv;                                      //
     use env_logger::Env; 
     use users::routes_users::user_routes;
+    use rbac::routes_rbac::rbac_routes;
     use crate::middleware::AuthMiddleware;
-    use crate::middleware::AuthMode;                //Middleware
 
 use actix_web::middleware::Logger;
     //---------------------------------------------
@@ -76,19 +77,26 @@ use actix_web::middleware::Logger;
                 // respuesta que no sea de una lista corta. Un proxy inverso no lo
                 // sufre —lee la respuesta directa, sin CORS de por medio— así que
                 // esto es solo para que un cliente de navegador pueda usarla.
-                .expose_headers(vec!["X-Auth-User"])
+                .expose_headers(vec!["X-Auth-User", "X-Auth-Roles", "X-Auth-Perms"])
                 .max_age(3600);
 
             // Scope para rutas protegidas que requieren autenticación.
+            //
+            // El middleware de este scope solo exige sesión. Los permisos se
+            // exigen **más adentro**, en cada sub-scope, porque no todas las
+            // rutas de `/api` piden lo mismo: `/api/me/permisos` la usa cualquiera
+            // con sesión, y `/api/rbac` solo quien administra permisos.
             let protected_scope = web::scope("/api")
-                .wrap(AuthMiddleware { mode: AuthMode::Required })
-                
+                .wrap(AuthMiddleware::sesion())
+
                 .route("/profile", web::get().to(users::handler_users::get_user_profile))
                 .service(
                     web::scope("/me")
                         .route("", web::post().to(users::handler_users::register_employer))
                         .route("/summary", web::get().to(users::handler_users::get_employees_summary))
-                );
+                        .route("/permisos", web::get().to(rbac::handler_rbac::mis_permisos))
+                )
+                .configure(rbac_routes);
             App::new()
                 // 1. Aplicamos el middleware de CORS PRIMERO, para que afecte a todas las rutas.
                 .wrap(Logger::default())

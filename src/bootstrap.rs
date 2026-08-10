@@ -28,6 +28,11 @@ pub async fn crear_admin_si_falta(pool: &PgPool) {
     match ya_existe(pool, &email).await {
         Ok(true) => {
             log::info!("administrador inicial ya existe: {email}");
+            // Aunque ya exista, se comprueba que tenga el rol. El administrador
+            // de esta base se creó antes de que el RBAC estuviera sembrado, así
+            // que existe y no es nada — y ese es justo el estado en el que nadie
+            // puede conceder permisos a nadie.
+            asegurar_rol_adm(pool, &email).await;
             return;
         }
         Ok(false) => {}
@@ -66,9 +71,43 @@ pub async fn crear_admin_si_falta(pool: &PgPool) {
     match insercion {
         Ok(res) if res.rows_affected() > 0 => {
             log::info!("administrador inicial creado: {email}");
+            asegurar_rol_adm(pool, &email).await;
         }
         Ok(_) => log::info!("administrador inicial ya existía: {email}"),
         Err(err) => log::warn!("no se pudo crear el administrador inicial: {err}"),
+    }
+}
+
+/// Le da el rol `adm` al administrador inicial si no lo tiene ya.
+///
+/// Idempotente y silenciosa cuando no hay nada que hacer. No aborta el arranque
+/// si falla, por la misma razón que el resto de este fichero: un servicio de
+/// identidad caído deja fuera a todo el mundo, y esto solo afecta a una cuenta.
+///
+/// Si el rol `adm` no existe todavía —la migración del RBAC no se ha aplicado—
+/// no inserta nada y lo dice. Crear el rol aquí sería peor: el catálogo de
+/// permisos vive en una migración, versionada y auditable, y no en un efecto
+/// secundario del arranque.
+async fn asegurar_rol_adm(pool: &PgPool, email: &str) {
+    let resultado = sqlx::query(
+        r#"
+        INSERT INTO auth.user_roles (user_id, role_id)
+        SELECT u.id, r.id
+        FROM auth.users u, auth.roles r
+        WHERE u.email = $1 AND r.name = 'adm'
+        ON CONFLICT (user_id, role_id) DO NOTHING
+        "#,
+    )
+    .bind(email)
+    .execute(pool)
+    .await;
+
+    match resultado {
+        Ok(res) if res.rows_affected() > 0 => {
+            log::info!("rol adm concedido al administrador inicial: {email}")
+        }
+        Ok(_) => log::debug!("el administrador inicial ya tenía el rol adm, o el rol no existe"),
+        Err(err) => log::warn!("no se pudo conceder el rol adm a {email}: {err}"),
     }
 }
 

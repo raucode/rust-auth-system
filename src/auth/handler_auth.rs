@@ -5,23 +5,45 @@ pub struct Claims {
     pub sub: Uuid,
     pub exp: usize,
     pub iat: usize,
-}
-// Payload futuro
-/* 
-pub struct Claims {
-  "sub": "user_123",
-  "role": "admin",
-  "iat": 1710000000,
-  "exp": 1710003600
-}*/
 
-pub fn create_jwt(user_id: Uuid) -> Result<String, jsonwebtoken::errors::Error> {
+    // Qué es y qué puede hacer quien trae este token. Se resuelven contra la base
+    // al entrar y al refrescar; a partir de ahí viajan firmados aquí dentro y
+    // nadie vuelve a consultar el RBAC hasta el siguiente refresco. El porqué y su
+    // precio, en la cabecera de `crate::rbac`.
+    //
+    // `serde(default)` no es adorno: sin él, **todos los tokens emitidos antes de
+    // este cambio dejarían de decodificar** y toda sesión abierta se caería a 401
+    // en el momento de desplegar. Con él, un token viejo entra con las listas
+    // vacías y se completa solo en el primer refresco.
+    #[serde(default)]
+    pub roles: Vec<String>,
+    #[serde(default)]
+    pub perms: Vec<String>,
+}
+
+impl Claims {
+    /// Si esta sesión tiene un permiso concreto.
+    pub fn puede(&self, permiso: &str) -> bool {
+        self.perms.iter().any(|p| p == permiso)
+    }
+}
+
+pub fn create_jwt(
+    user_id: Uuid,
+    rbac: &crate::rbac::repositories_rbac::Rbac,
+) -> Result<String, jsonwebtoken::errors::Error> {
     let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
     let now = SystemTime::now();
     let iat = now.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs() as usize;
-    let exp = iat + (60 * 10); // 1200 segundos = 20 minutos (60 * 20)
+    let exp = iat + (60 * 10); // 10 minutos
 
-    let claims = Claims { sub: user_id, iat, exp };
+    let claims = Claims {
+        sub: user_id,
+        iat,
+        exp,
+        roles: rbac.roles.clone(),
+        perms: rbac.permisos.clone(),
+    };
     encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_ref()))
 }
 
@@ -49,10 +71,14 @@ pub async fn verify(req: HttpRequest) -> HttpResponse {
 
     match crate::middleware::validar_token(cookie.value()) {
         Ok(claims) => HttpResponse::Ok()
-            // Los roles todavía no viajan aquí: `Claims` solo lleva `sub`, `exp`
-            // e `iat`, y resolverlos exigiría consultar el RBAC en cada petición.
-            // Cuando se añadan, este es su sitio.
             .insert_header(("X-Auth-User", claims.sub.to_string()))
+            // Roles y permisos viajan separados por coma porque una cabecera HTTP
+            // es texto plano: es el formato que nginx sabe reenviar tal cual y que
+            // cualquier servicio de detrás puede partir sin traerse un parser de
+            // JSON. Salen de los claims ya validados, así que esto **no consulta
+            // la base** — y este endpoint lo llama el proxy en cada petición.
+            .insert_header(("X-Auth-Roles", claims.roles.join(",")))
+            .insert_header(("X-Auth-Perms", claims.perms.join(",")))
             .finish(),
         Err(err) => {
             log::debug!("verify rechazado: {err:?}");
@@ -159,9 +185,21 @@ pub async fn refresh_token(
 
         match record {
             Some(r) if !r.revoked && r.expires_at > chrono::Utc::now() => {
-                let access_token = create_jwt(r.user_id)
+                // **Aquí es donde un cambio de permisos entra en vigor.** El token
+                // de acceso lleva los permisos dentro, así que mientras vive nadie
+                // mira la base; al refrescarlo se vuelven a leer. Esa es la razón
+                // de que la ventana entre conceder o retirar un permiso y que se
+                // note sea, como mucho, lo que dure el acceso.
+                let rbac = crate::rbac::repositories_rbac::cargar(pool.get_ref(), r.user_id)
+                    .await
+                    .map_err(|e| {
+                        log::error!("no se pudo cargar el RBAC al refrescar: {e}");
+                        actix_web::error::ErrorInternalServerError("Error en la base de datos")
+                    })?;
+
+                let access_token = create_jwt(r.user_id, &rbac)
                     .map_err(|_| actix_web::error::ErrorInternalServerError("No se pudo crear el token"))?;
-                
+
                 let access_cookie = create_auth_cookie(&access_token);
 
                 Ok(HttpResponse::Ok().cookie(access_cookie).finish())
