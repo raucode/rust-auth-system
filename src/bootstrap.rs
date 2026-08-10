@@ -52,13 +52,14 @@ pub async fn crear_admin_si_falta(pool: &PgPool) {
         }
     };
 
-    // `state` y `user_type` son NOT NULL en el esquema y no significan nada para un
-    // administrador interno: son restos del modelo de restaurantes. Se rellenan
-    // con lo mínimo y desaparecerán al separar la identidad del negocio.
+    // `user_type` sigue siendo NOT NULL y no significa nada para un administrador
+    // interno: es el último resto del modelo de restaurantes en esta tabla. Se
+    // rellena con lo mínimo y desaparecerá al separar la identidad del negocio.
+    // `state` ya no está: se retiró el 2026-08-10.
     let insercion = sqlx::query(
         r#"
-        INSERT INTO auth.users (email, password_hash, full_name, state, user_type, is_active)
-        VALUES ($1, $2, $3, 'GO', 'admin', TRUE)
+        INSERT INTO auth.users (email, password_hash, full_name, user_type, is_active)
+        VALUES ($1, $2, $3, 'admin', TRUE)
         ON CONFLICT (email) DO NOTHING
         "#,
     )

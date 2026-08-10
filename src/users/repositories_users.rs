@@ -15,10 +15,9 @@ pub async fn create_user(
         r#"
         INSERT INTO auth.users (
             id, email, password_hash,
-            full_name, phone,
-            state, user_type
+            full_name, user_type
         )
-        VALUES ($1,$2,$3,$4,$5,$6,$7)
+        VALUES ($1,$2,$3,$4,$5)
         RETURNING *
         "#
     )
@@ -26,8 +25,6 @@ pub async fn create_user(
     .bind(&data.email)
     .bind(password_hash)
     .bind(&data.full_name)
-    .bind(&data.phone)
-    .bind(&data.state)
     .bind(&data.user_type)
     .fetch_one(conn)
     .await

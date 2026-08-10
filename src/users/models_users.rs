@@ -10,14 +10,10 @@ pub enum UserType {
     Admin,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, sqlx::Type)]
-#[sqlx(type_name = "state_enum")]
-pub enum StateEnum {
-    AC, AL, AP, AM, BA, CE, DF,
-    ES, GO, MA, MT, MS, MG, PA,
-    PB, PR, PE, PI, RJ, RN, RS,
-    RO, RR, SC, SP, SE, TO,
-}
+// Aquí vivía `StateEnum` con los 27 estados de Brasil, y `User` tenía `state` y
+// `phone`. Fuera desde el 2026-08-10: la identidad guarda lo que hace falta para
+// saber quién eres y qué puedes hacer, y ni el estado ni el teléfono responden a
+// ninguna de las dos preguntas.
 
 #[derive(Debug, Serialize, Deserialize, sqlx::FromRow)]
 pub struct User {
@@ -28,9 +24,7 @@ pub struct User {
     pub password_hash: String,
 
     pub full_name: String,
-    pub phone: Option<String>,
 
-    pub state: StateEnum,
     pub user_type: UserType,
 
     pub is_active: bool,
@@ -86,8 +80,6 @@ pub struct RegisterUserBase {
     pub email: String,
     pub password: String,
     pub full_name: String,
-    pub phone: Option<String>,
-    pub state: StateEnum,
 }
 
 #[derive(Debug, Deserialize)]

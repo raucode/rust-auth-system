@@ -222,14 +222,23 @@ pub async fn get_user_profile_service(
         .await
         .map_err(|e| e.to_string())?;
 
-    // 3️⃣ Crear UserProfile
+    // 3️⃣ Roles y permisos, leídos de la base.
+    //
+    // Estos dos campos existían con un `vec![]` y un comentario que decía «aquí
+    // puedes llenar tus roles si tienes lógica de RBAC». Ya la hay. Se leen de la
+    // base y no del token porque este endpoint devuelve **el perfil real**, y un
+    // token emitido hace nueve minutos puede no reflejar un cambio reciente.
+    let rbac = crate::rbac::repositories_rbac::cargar(pool, user_id)
+        .await
+        .map_err(|e| e.to_string())?;
+
     let profile = UserProfile {
         user,
         owner,
         employer,
         admin,
-        roles: vec![],       // Aquí puedes llenar tus roles si tienes lógica de RBAC
-        permissions: vec![], // Igual con permisos
+        roles: rbac.roles,
+        permissions: rbac.permisos,
     };
 
     Ok(profile)
