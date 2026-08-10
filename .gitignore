@@ -7,8 +7,10 @@ target/
 # comprobarse.
 
 # Frontends de prueba
-web/node_modules/
+node_modules/
 web/*/dist/
+# Cachés de Vite: una por frontend, para que los tres puedan arrancar a la vez
+.vite*/
 
 # Archivos de entorno
 .env
