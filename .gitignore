@@ -20,6 +20,7 @@ despliegue/proxy-secreto.conf
 # configuración sí se versiona; el estado de una ejecución concreta, no.
 despliegue/logs/
 despliegue/temp/
+despliegue/arranque/
 despliegue/client_body_temp/
 despliegue/*_temp/
 
