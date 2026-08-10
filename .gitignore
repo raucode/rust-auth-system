@@ -12,6 +12,10 @@ web/*/dist/
 # Cachés de Vite: una por frontend, para que los tres puedan arrancar a la vez
 .vite*/
 
+# El secreto compartido entre el proxy y los servicios de detrás. La
+# configuración se versiona; el secreto no, igual que el .env.
+despliegue/proxy-secreto.conf
+
 # Lo que nginx escribe al ejecutarse: pid, logs y ficheros temporales. La
 # configuración sí se versiona; el estado de una ejecución concreta, no.
 despliegue/logs/
