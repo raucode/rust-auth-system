@@ -7,6 +7,7 @@
     mod config;             // Configuracion del entorno
     mod users;              // Usuarios
     mod rbac;               // Roles y permisos
+    mod servicios;          // Aplicaciones que confian en este auth
     mod db;                 // DataBase
     mod middleware;         // Middleware
     mod crates;             // Imports Globales
@@ -96,6 +97,7 @@ use actix_web::middleware::Logger;
                         .route("/summary", web::get().to(users::handler_users::get_employees_summary))
                         .route("/permisos", web::get().to(rbac::handler_rbac::mis_permisos))
                 )
+                .route("/servicios", web::get().to(servicios::mis_servicios))
                 .configure(rbac_routes);
             App::new()
                 // 1. Aplicamos el middleware de CORS PRIMERO, para que afecte a todas las rutas.
@@ -112,6 +114,10 @@ use actix_web::middleware::Logger;
                         // valida por su cuenta y su trabajo incluye poder
                         // responder 401.
                         .route("/verify", web::get().to(auth::handler_auth::verify))
+                        // Público como el login, y por el mismo motivo: lo
+                        // consulta la pantalla de sesión de alguien que todavía
+                        // no ha entrado. Solo responde sí o no.
+                        .route("/destino", web::get().to(servicios::comprobar_destino))
                 )
 
                 // Registrar el scope de rutas protegidas

@@ -45,13 +45,39 @@ pub async fn roles_de_usuario(pool: web::Data<PgPool>, id: web::Path<Uuid>) -> H
 }
 
 /// Concede un rol.
+///
+/// Con el corte que impide la escalada: **solo un `adm` puede crear otro `adm`**.
+///
+/// `helpdesk` administra cuentas y reparte roles, que es su trabajo. Pero
+/// administrar cuentas y repartir poder no son lo mismo: sin esta comprobación,
+/// cualquiera con `rbac:administrar` se concede `adm` a sí mismo en una petición
+/// y el permiso más alto del sistema pasa a estar al alcance del más común.
+///
+/// Va aquí y no en la tabla de permisos a propósito. Podría existir un permiso
+/// `rbac:crear-admin`, pero entonces sería concedible — y concedible por quien
+/// tiene `rbac:administrar`, con lo que la puerta se abre igual dando un rodeo.
+/// Esto tiene que ser una regla, no un permiso.
 pub async fn asignar_rol(
     pool: web::Data<PgPool>,
+    req: HttpRequest,
     id: web::Path<Uuid>,
     body: web::Json<AsignarRol>,
 ) -> HttpResponse {
     let user_id = id.into_inner();
     let rol = body.rol.trim().to_string();
+
+    if rol == "adm" {
+        let es_adm = req
+            .extensions()
+            .get::<Identidad>()
+            .is_some_and(|i| i.roles.iter().any(|r| r == "adm"));
+
+        if !es_adm {
+            log::warn!("intento de conceder adm sin serlo, sobre el usuario {user_id}");
+            return HttpResponse::Forbidden()
+                .json("Solo un administrador puede conceder el rol adm");
+        }
+    }
 
     match repo::usuario_existe(pool.get_ref(), user_id).await {
         Ok(false) => return HttpResponse::NotFound().json("Ese usuario no existe"),
