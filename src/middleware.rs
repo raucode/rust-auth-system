@@ -7,7 +7,7 @@ use actix_web::{
 };
 use futures::future::{ok, LocalBoxFuture, Ready};
 use jsonwebtoken::{decode, DecodingKey, Validation, Algorithm};
-use std::{env, rc::Rc};
+use std::rc::Rc;
 
 #[derive(Clone, Copy)]
 pub enum AuthMode {
@@ -40,15 +40,13 @@ pub fn validar_token(token: &str) -> Result<Claims, jsonwebtoken::errors::Error>
     // cookie entre comillas y el token deja de decodificarse por un carácter.
     let token = token.trim().trim_matches('"');
 
-    let secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
-
     let mut validation = Validation::new(Algorithm::HS256);
     validation.validate_exp = true;
     validation.leeway = 30;
 
     decode::<Claims>(
         token,
-        &DecodingKey::from_secret(secret.as_bytes()),
+        &DecodingKey::from_secret(crate::config::jwt_secret()),
         &validation,
     )
     .map(|data| data.claims)

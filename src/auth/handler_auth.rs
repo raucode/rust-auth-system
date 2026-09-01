@@ -33,13 +33,16 @@ pub fn create_jwt(
     user_id: Uuid,
     rbac: &crate::rbac::repositories_rbac::Rbac,
 ) -> Result<String, jsonwebtoken::errors::Error> {
-    let jwt_secret = env::var("JWT_SECRET").expect("JWT_SECRET must be set");
     let now = SystemTime::now();
     let iat = now.duration_since(UNIX_EPOCH).expect("Time went backwards").as_secs() as usize;
     let exp = iat + (60 * 10); // 10 minutos
 
     let claims = Claims { sub: user_id, iat, exp, roles: rbac.roles.clone() };
-    encode(&Header::default(), &claims, &EncodingKey::from_secret(jwt_secret.as_ref()))
+    encode(
+        &Header::default(),
+        &claims,
+        &EncodingKey::from_secret(crate::config::jwt_secret()),
+    )
 }
 
 /// Responde si la sesión de esta petición es válida. **No sirve contenido.**

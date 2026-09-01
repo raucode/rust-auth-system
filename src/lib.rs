@@ -11,7 +11,9 @@
 //! ```ignore
 //! // En el arranque de tu servicio, sobre un pool que ya tienes:
 //! rust_auth_system::MIGRACIONES.run(&pool).await?;
-//! let matriz = rust_auth_system::preparar(&pool).await;
+//! // `preparar` comprueba `JWT_SECRET` y falla aquí si falta, que es donde tiene
+//! // que fallar: sin ella no se puede firmar ninguna sesión.
+//! let matriz = rust_auth_system::preparar(&pool).await?;
 //!
 //! HttpServer::new(move || {
 //!     App::new()
@@ -89,12 +91,27 @@ pub static MIGRACIONES: sqlx::migrate::Migrator = sqlx::migrate!("./migrations")
 /// Devuelve la matriz ya envuelta en `web::Data` porque es lo que hay que
 /// registrar en la aplicación, y porque clonarla clona el puntero y no el
 /// contenido: todos los trabajadores comparten una, que es la que se recarga sola.
-pub async fn preparar(pool: &PgPool) -> web::Data<Matriz> {
+///
+/// ## Por qué devuelve `Result` desde el 2026-09-01
+///
+/// Aquí se comprueba `JWT_SECRET`, que antes se leía con `expect` en el momento
+/// de firmar un token. Un despliegue sin ella arrancaba tan feliz y **reventaba
+/// al primer intento de entrar**: el hilo de la petición moría, el proxy inverso
+/// devolvía un 502 y en el log de la aplicación no había nada. Se veía como un
+/// servicio caído, y el servicio estaba entero.
+///
+/// El error se devuelve en vez de abortar porque esto es una biblioteca: **cómo
+/// se para el proceso es decisión de quien lo integra**, no nuestra. Lo que sí
+/// es nuestro es que no se pueda olvidar — por eso la comprobación vive aquí y no
+/// en una función suelta que haya que acordarse de llamar.
+pub async fn preparar(pool: &PgPool) -> Result<web::Data<Matriz>, String> {
+    config::comprobar_jwt_secret()?;
+
     bootstrap::crear_admin_si_falta(pool).await;
 
     let matriz = web::Data::new(Matriz::nueva());
     matriz.precargar(pool).await;
-    matriz
+    Ok(matriz)
 }
 
 /// Las rutas que tienen que ser públicas, bajo `/auth`.

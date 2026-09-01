@@ -111,3 +111,64 @@ pub fn admin_inicial() -> Option<(String, String)> {
     }
     Some((email.trim().to_string(), password))
 }
+
+/// La clave con la que se firman y se verifican los tokens de sesión.
+///
+/// ## Por qué está aquí y no en un `env::var` en cada sitio
+///
+/// Estaba leída con `expect` en dos puntos —al firmar un token y al validarlo—,
+/// y eso significaba que **un despliegue sin `JWT_SECRET` no fallaba al
+/// arrancar: fallaba al primer intento de entrar**, con un panic que se llevaba
+/// por delante el hilo de la petición. Por fuera se veía un 502 del proxy inverso
+/// y nada en el log de la aplicación, que es de los rastros más difíciles de
+/// seguir: parece que el servicio se ha caído, y el servicio está perfectamente.
+///
+/// Con [`comprobar`] llamada desde [`crate::preparar`], la misma falta se
+/// convierte en un servicio que no arranca y dice por qué. Un servicio de
+/// identidad que no puede firmar sesiones no tiene un modo degradado en el que
+/// sirva de algo.
+///
+/// ## Por qué no hay valor por defecto
+///
+/// Una clave de reserva es una clave conocida: quien tenga el código firma sus
+/// propios tokens y entra como quien quiera. Es preferible no arrancar.
+///
+/// Se cachea en un [`OnceLock`] porque se usa en cada petición y `env::var`
+/// reserva memoria en cada llamada.
+static SECRETO: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+
+/// El mínimo en bytes. HS256 usa una clave de 256 bits, así que menos de 32
+/// bytes es una clave más corta que el hash que produce.
+const MINIMO: usize = 32;
+
+/// Comprueba que la clave está y sirve. **Se llama al arrancar.**
+///
+/// Devuelve el motivo en vez de abortar para que quien la llame decida: al
+/// integrarse en otro binario, quién y cómo se para es cosa suya.
+pub fn comprobar_jwt_secret() -> Result<(), String> {
+    let bruto = env::var("JWT_SECRET")
+        .map_err(|_| "falta JWT_SECRET: sin ella no se pueden firmar sesiones".to_string())?;
+
+    let bruto = bruto.trim();
+    if bruto.len() < MINIMO {
+        return Err(format!(
+            "JWT_SECRET tiene {} bytes y hacen falta {MINIMO} como mínimo (openssl rand -base64 48)",
+            bruto.len()
+        ));
+    }
+
+    let _ = SECRETO.set(bruto.as_bytes().to_vec());
+    Ok(())
+}
+
+/// La clave, ya validada.
+///
+/// El `expect` de aquí **no es el de antes**: aquel saltaba por una variable de
+/// entorno que faltaba, o sea por algo que pasa de verdad. Este solo puede saltar
+/// si alguien atiende peticiones sin haber llamado a [`crate::preparar`], que es
+/// un error de programación y no de despliegue.
+pub fn jwt_secret() -> &'static [u8] {
+    SECRETO
+        .get()
+        .expect("jwt_secret() antes de preparar(): la clave no se ha comprobado")
+}
