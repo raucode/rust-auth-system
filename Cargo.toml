@@ -3,6 +3,24 @@ name = "core_suite"
 version = "0.1.0"
 edition = "2024"
 
+# **Las dos formas de usar esto, y por qué existen las dos.**
+#
+# `[lib]` es la principal: un servicio en Rust se trae la identidad **dentro** y
+# deja de tener que hablar con nadie por la red. Es para lo que se escribió esto
+# —montar sesiones, refresh y permisos se hace una vez y se reutiliza—, y es como
+# lo usa el visor de infraestructura.
+#
+# `[[bin]]` sigue existiendo porque un servicio que **no** sea Rust no puede
+# importar un crate: ahí se levanta este binario aparte y se le pregunta por
+# `auth_request` desde el proxy inverso. Es la alternativa, no el camino.
+[lib]
+name = "core_suite"
+path = "src/lib.rs"
+
+[[bin]]
+name = "core_suite"
+path = "src/main.rs"
+
 [dependencies]
 # Web y Actix
 actix-web = "4"
