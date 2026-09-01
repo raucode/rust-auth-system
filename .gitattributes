@@ -1,0 +1,16 @@
+# **Las migraciones van siempre en LF, en cualquier plataforma.**
+#
+# `sqlx` guarda un checksum de cada migración aplicada y compara al arrancar. Si
+# el fichero cambia de finales de línea —y en Windows `core.autocrlf` los cambia
+# al clonar— el checksum deja de cuadrar y el servicio no arranca:
+#
+#   migration 20260810070000 was previously applied but has been modified
+#
+# El mensaje habla de una modificación que nadie hizo. Pasó de verdad el
+# 2026-09-01, entre una prueba en Linux y la misma base vista desde Windows.
+*.sql text eol=lf
+
+# Por lo mismo, y porque el formato de Rust ya asume LF.
+*.rs text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
