@@ -42,9 +42,6 @@ pub async fn register_user_service(
     let mut tx = pool.begin().await
     .map_err(actix_web::error::ErrorInternalServerError)?;
 
-    // 👇 SACA LA CONEXIÓN
-    let conn = tx.as_mut();
-
     // 🔑 Hash password
     let password_hash = bcrypt::hash(&data.base.password, bcrypt::DEFAULT_COST)
         .map_err(|_| actix_web::error::ErrorInternalServerError("hash error"))?;

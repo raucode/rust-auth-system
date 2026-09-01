@@ -1,25 +1,22 @@
 [package]
-name = "core_suite"
+name = "rust_auth_system"
 version = "0.1.0"
 edition = "2024"
 
-# **Las dos formas de usar esto, y por qué existen las dos.**
+# **Esto es una librería y nada más.**
 #
-# `[lib]` es la principal: un servicio en Rust se trae la identidad **dentro** y
-# deja de tener que hablar con nadie por la red. Es para lo que se escribió esto
-# —montar sesiones, refresh y permisos se hace una vez y se reutiliza—, y es como
-# lo usa el visor de infraestructura.
+# Un servicio en Rust se trae la identidad dentro y deja de tener que hablar con
+# nadie por la red: montar sesiones, refresh y permisos se hace una vez y se
+# reutiliza.
 #
-# `[[bin]]` sigue existiendo porque un servicio que **no** sea Rust no puede
-# importar un crate: ahí se levanta este binario aparte y se le pregunta por
-# `auth_request` desde el proxy inverso. Es la alternativa, no el camino.
+# El servicio suelto que responde `/auth/verify` a un proxy inverso —para las
+# plataformas que no son Rust— vive en el proyecto **SSO**, que es quien se
+# ocupa de integrar esto con varias plataformas. Aquí no hay binario a
+# propósito: un componente que además se levanta solo acaba siendo dos cosas y
+# ninguna del todo.
 [lib]
-name = "core_suite"
+name = "rust_auth_system"
 path = "src/lib.rs"
-
-[[bin]]
-name = "core_suite"
-path = "src/main.rs"
 
 [dependencies]
 # Web y Actix

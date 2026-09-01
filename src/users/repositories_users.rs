@@ -78,8 +78,8 @@ pub async fn create_employer(
     .bind(owner_id)
     .bind(restaurant_id)
     .bind(&data.cpf)
-    .bind(&data.hire_date)
-    .bind(&data.role)
+    .bind(data.hire_date)
+    .bind(data.role)
     .bind(&data.salary)
     .execute(conn)
     .await
@@ -152,7 +152,7 @@ pub async fn find_user_by_email(
         .bind(email)
         .fetch_optional(pool)
         .await
-        .map_err(|e| actix_web::error::ErrorInternalServerError(e))
+        .map_err(actix_web::error::ErrorInternalServerError)
 }
 
 pub async fn find_user_by_id(
@@ -186,7 +186,7 @@ pub async fn store_refresh_token(
     .bind(expires_at)
     .execute(pool)
     .await
-    .map_err(|e| actix_web::error::ErrorInternalServerError(e))?;
+    .map_err(actix_web::error::ErrorInternalServerError)?;
 
     Ok(())
 }

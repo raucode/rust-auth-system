@@ -10,32 +10,31 @@
 //!
 //! ```ignore
 //! // En el arranque de tu servicio, sobre un pool que ya tienes:
-//! core_suite::MIGRACIONES.run(&pool).await?;
-//! let matriz = core_suite::preparar(&pool).await;
+//! rust_auth_system::MIGRACIONES.run(&pool).await?;
+//! let matriz = rust_auth_system::preparar(&pool).await;
 //!
 //! HttpServer::new(move || {
 //!     App::new()
 //!         .app_data(web::Data::new(pool.clone()))
 //!         .app_data(matriz.clone())
-//!         .configure(core_suite::rutas_sesion)          // públicas: login, refresh…
-//!         .configure(core_suite::rutas_administracion)  // protegidas: perfil, RBAC…
+//!         .configure(rust_auth_system::rutas_sesion)          // públicas: login, refresh…
+//!         .configure(rust_auth_system::rutas_administracion)  // protegidas: perfil, RBAC…
 //! })
 //! ```
 //!
 //! El servicio que hace eso **no necesita proxy delante para autenticar**, ni
 //! sabe qué es un JWT: pide la identidad al extractor y ya está resuelta.
 //!
-//! ## La otra forma, y cuándo usarla
+//! ## Lo que no está aquí
 //!
-//! El binario de este mismo crate levanta lo de arriba como servicio suelto, con
-//! `GET /auth/verify` respondiendo 200 o 401 para que un proxy inverso lo consulte
-//! (`auth_request` en nginx, `forwardAuth` en Traefik). **Eso es para servicios que
-//! no son Rust**, que no pueden importar un crate. Un servicio en Rust que use el
-//! modo proxy está pagando un salto de red por algo que puede tener dentro.
+//! **Integrar esto con plataformas que no son Rust es el trabajo del SSO**, que
+//! es otro proyecto y nace de este. Allí vive el servicio suelto que responde
+//! `GET /auth/verify` a un proxy inverso, con su web y sus frontends. Aquí no
+//! hay binario: un componente que además se levanta solo acaba siendo dos cosas
+//! y ninguna del todo.
 //!
-//! En ese modo hay una regla que sostiene todo el esquema: **el proxy tiene que
-//! borrar cualquier cabecera `X-Auth-*` que llegue de fuera** antes de reenviar la
-//! petición. Si un cliente pudiera mandarla, se declararía quien quisiera.
+//! `rutas_sesion` incluye `verify` porque es una ruta más de sesión y no estorba
+//! integrada; quien la necesita de verdad es ese servicio.
 //!
 //! ## Lo que el consumidor tiene que saber de la base
 //!
