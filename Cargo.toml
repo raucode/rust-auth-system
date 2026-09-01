@@ -60,8 +60,10 @@ rust_decimal_macros = "1"
 # que pasa es que implementa el de la otra versión.
 bigdecimal = { version = "0.4", features = ["serde"] }
 
-# Dependencias de documentación
-
-# Documentación
-utoipa = { version = "5.4.0", features = ["uuid"] }
-utoipa-swagger-ui = { version = "9.0", features = ["actix-web"] }
+# **Sin `utoipa` ni `utoipa-swagger-ui` desde el 2026-09-01.** No los importaba
+# ni una línea de `src/`, y su script de compilación se descarga Swagger UI con
+# `curl`: en una imagen de Docker sin curl, el build de cualquier consumidor
+# fallaba por una dependencia que no se usaba.
+#
+# Servir documentación interactiva es de un servicio, no de una librería. Si hace
+# falta, su sitio es el SSO.
