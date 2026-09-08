@@ -153,11 +153,9 @@ pub fn rutas_administracion(cfg: &mut web::ServiceConfig) {
             )
             .service(
                 web::scope("/me")
-                    .route("", web::post().to(users::handler_users::register_employer))
-                    .route(
-                        "/summary",
-                        web::get().to(users::handler_users::get_employees_summary),
-                    )
+                    // Aquí colgaban `POST /api/me` (alta de empleado) y
+                    // `GET /api/me/summary` (nómina por restaurante). Se fueron el
+                    // 2026-09-08 con las tablas que consultaban.
                     .route("/permisos", web::get().to(rbac::handler_rbac::mis_permisos)),
             )
             .route("/servicios", web::get().to(servicios::mis_servicios))

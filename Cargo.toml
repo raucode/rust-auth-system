@@ -44,7 +44,7 @@ bcrypt = "0.15"
 # rechazar (`cargo report future-incompatibilities`), y además alinea con el visor
 # de infraestructura, que ya usa 0.8.6 — dos servicios que van a hablar de la
 # misma base no deberían diferir en el driver.
-sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "macros", "uuid", "chrono", "json", "bigdecimal", "rust_decimal"] }
+sqlx = { version = "0.8", features = ["postgres", "runtime-tokio", "macros", "uuid", "chrono", "json"] }
 # Utilidades y otros
 dotenv = "0.15"
 futures = "0.3"
@@ -52,13 +52,12 @@ env_logger = "0.10"
 log = "0.4"
 time = "0.3"
 
-rust_decimal = "1"
-rust_decimal_macros = "1"
-# 0.4 y no 0.3: la feature `bigdecimal` de sqlx 0.8 se compila contra 0.4, y con
-# dos versiones del mismo tipo en el árbol los traits `Decode`/`Type` no son los
-# mismos — el error habla de que `BigDecimal` no implementa `FromRow`, cuando lo
-# que pasa es que implementa el de la otra versión.
-bigdecimal = { version = "0.4", features = ["serde"] }
+# **Sin `bigdecimal` ni `rust_decimal` desde el 2026-09-08.** Los usaba una sola
+# cosa: el `salary` de `auth.employers`. Al irse la ficha de empleado no queda en
+# la identidad ningún número que necesite precisión arbitraria, y con ellos se va
+# también la trampa que estaba anotada aquí — que la feature `bigdecimal` de sqlx
+# 0.8 se compila contra la 0.4 y tener dos versiones del tipo en el árbol da un
+# error que habla de `FromRow` cuando lo que falla es la versión.
 
 # **Sin `utoipa` ni `utoipa-swagger-ui` desde el 2026-09-01.** No los importaba
 # ni una línea de `src/`, y su script de compilación se descarga Swagger UI con

@@ -52,20 +52,20 @@ pub async fn crear_admin_si_falta(pool: &PgPool) {
         }
     };
 
-    // `user_type` sigue siendo NOT NULL y no significa nada para un administrador
-    // interno: es el último resto del modelo de restaurantes en esta tabla. Se
-    // rellena con lo mínimo y desaparecerá al separar la identidad del negocio.
-    // `state` ya no está: se retiró el 2026-08-10.
+    // Ya no se rellena `user_type` con 'admin' ni `full_name` con «Administrador»:
+    // la columna se fue el 2026-09-08 con el resto del modelo de restaurantes, y el
+    // nombre dejó de ser obligatorio en la misma migración. Aquel «Administrador»
+    // era justo la clase de relleno que un NOT NULL de más obliga a inventar.
+    // `state` y `phone` ya se habían retirado el 2026-08-10.
     let insercion = sqlx::query(
         r#"
-        INSERT INTO auth.users (email, password_hash, full_name, user_type, is_active)
-        VALUES ($1, $2, $3, 'admin', TRUE)
+        INSERT INTO auth.users (email, password_hash, is_active)
+        VALUES ($1, $2, TRUE)
         ON CONFLICT (email) DO NOTHING
         "#,
     )
     .bind(&email)
     .bind(&password_hash)
-    .bind("Administrador")
     .execute(pool)
     .await;
 
