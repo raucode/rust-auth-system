@@ -26,8 +26,8 @@ pub async fn register_user_service(
 ) -> Result<AuthResponse, actix_web::Error> {
     // El hash se calcula antes de tocar la base para que la contraseña en claro no
     // llegue nunca al log de consultas de PostgreSQL.
-    let password_hash = bcrypt::hash(&data.password, bcrypt::DEFAULT_COST)
-        .map_err(|_| actix_web::error::ErrorInternalServerError("hash error"))?;
+    let password_hash = crate::passwords::cifrar(&data.password)
+        .map_err(actix_web::error::ErrorInternalServerError)?;
 
     let user_id = Uuid::new_v4();
     let user = repositories_users::create_user(pool, user_id, &data, &password_hash).await?;
@@ -72,11 +72,27 @@ pub async fn login_user_service(
         None => return Err(actix_web::error::ErrorUnauthorized("Invalid credentials")),
     };
 
-    let valid = bcrypt::verify(&data.password, &user.password_hash)
-        .map_err(|_| actix_web::error::ErrorInternalServerError("Failed to verify password"))?;
-
-    if !valid {
-        return Err(actix_web::error::ErrorUnauthorized("Invalid credentials"));
+    match crate::passwords::verificar(&data.password, &user.password_hash) {
+        crate::passwords::Verificacion::Incorrecta => {
+            return Err(actix_web::error::ErrorUnauthorized("Invalid credentials"));
+        }
+        crate::passwords::Verificacion::Correcta => {}
+        // El hash era del formato viejo. **Este es el único instante en que se puede
+        // migrar**: es cuando alguien acaba de escribir su contraseña bien, y sin
+        // ella no hay forma de calcular el hash nuevo.
+        //
+        // Si la escritura falla, se entra igual. Que la base siga con un hash de
+        // bcrypt un rato más no le impide a nadie usar el sistema, y negarle la
+        // entrada a quien puso su contraseña correcta sí.
+        crate::passwords::Verificacion::CorrectaYRehecha(nuevo) => {
+            if let Err(e) =
+                users::repositories_users::actualizar_password_hash(pool, user.id, &nuevo).await
+            {
+                log::warn!("no se pudo guardar el hash rehecho de {}: {e}", user.id);
+            } else {
+                log::info!("contraseña de {} migrada de bcrypt a argon2id", user.id);
+            }
+        }
     }
 
     // Roles y permisos, resueltos una vez y firmados dentro del token.

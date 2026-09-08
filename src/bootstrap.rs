@@ -8,7 +8,6 @@
 //! que arrancar dos veces no duplica nada ni sobrescribe una contraseña que se
 //! haya cambiado luego.
 
-use bcrypt::{DEFAULT_COST, hash};
 use sqlx::PgPool;
 
 use crate::config;
@@ -44,7 +43,7 @@ pub async fn crear_admin_si_falta(pool: &PgPool) {
 
     // El hash se calcula aquí y no en SQL: la contraseña en claro no debe llegar
     // nunca al log de consultas de PostgreSQL.
-    let password_hash = match hash(&password, DEFAULT_COST) {
+    let password_hash = match crate::passwords::cifrar(&password) {
         Ok(h) => h,
         Err(err) => {
             log::warn!("no se pudo cifrar la contraseña del administrador inicial: {err}");

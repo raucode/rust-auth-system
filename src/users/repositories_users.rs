@@ -33,6 +33,23 @@ pub async fn create_user(
     })
 }
 
+/// Sustituye el hash de una contraseña sin tocar nada más.
+///
+/// Existe para el rehasheo transparente de [`crate::passwords::verificar`]: no
+/// cambia la contraseña, cambia **cómo está guardada la misma contraseña**.
+pub async fn actualizar_password_hash(
+    pool: &PgPool,
+    id: Uuid,
+    password_hash: &str,
+) -> Result<(), sqlx::Error> {
+    sqlx::query("UPDATE auth.users SET password_hash = $1 WHERE id = $2")
+        .bind(password_hash)
+        .bind(id)
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
 pub async fn find_user_by_email(
     pool: &PgPool,
     email: &str,

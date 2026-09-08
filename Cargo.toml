@@ -36,7 +36,25 @@ chrono = { version = "0.4", features = ["serde"] }
 
 # Seguridad
 jsonwebtoken = "9"
+
+# argon2id para las contraseñas nuevas. `Argon2::default()` son los parámetros
+# recomendados hoy (19 MiB, 2 pasadas, 1 hilo) y viajan dentro del propio hash, así
+# que subirlos mañana no invalida los de hoy.
+#
+# 0.5 y `rand` 0.8 van juntos: argon2 0.5 depende de `rand_core` 0.6, que es el que
+# usa rand 0.8. Subir uno obliga a subir el otro.
+argon2 = "0.5"
+
+# **bcrypt se queda solo para verificar.** No se cifra nada nuevo con él desde el
+# 2026-09-08; sigue aquí porque hay hashes viejos en bases que ya existen, y quitarlo
+# obligaria a que todo el mundo restablezca su contraseña. `passwords::verificar` los
+# acepta y los rehace en el primer login correcto, que es el único instante en que se
+# puede migrar sin conocer la contraseña. Cuando no queden `$2` en ninguna base, fuera.
 bcrypt = "0.15"
+
+# El resumen del token de refresco va con clave (`REFRESH_TOKEN_PEPPER`), no con un
+# SHA-256 pelado. Ver `auth::handler_auth::resumen_refresh`.
+hmac = "0.12"
 
 # Base de datos
 #

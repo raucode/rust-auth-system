@@ -112,63 +112,93 @@ pub fn admin_inicial() -> Option<(String, String)> {
     Some((email.trim().to_string(), password))
 }
 
-/// La clave con la que se firman y se verifican los tokens de sesión.
+/// Las dos claves, y por qué son dos.
 ///
-/// ## Por qué está aquí y no en un `env::var` en cada sitio
+/// El **token de acceso** es un JWT firmado con `JWT_ACCESS_SECRET`. El **refresh
+/// no es un JWT**: son 64 bytes aleatorios que viven en `auth.refresh_tokens`, y lo
+/// que se guarda de ellos es un resumen. Ese resumen se calcula ahora con HMAC y
+/// `REFRESH_TOKEN_PEPPER`, no con un SHA-256 pelado.
 ///
-/// Estaba leída con `expect` en dos puntos —al firmar un token y al validarlo—,
-/// y eso significaba que **un despliegue sin `JWT_SECRET` no fallaba al
-/// arrancar: fallaba al primer intento de entrar**, con un panic que se llevaba
-/// por delante el hilo de la petición. Por fuera se veía un 502 del proxy inverso
-/// y nada en el log de la aplicación, que es de los rastros más difíciles de
-/// seguir: parece que el servicio se ha caído, y el servicio está perfectamente.
+/// Así cada clave protege una mitad y **filtrar una no compromete la otra**: con la
+/// de acceso se pueden forjar accesos de diez minutos, pero no convertirlos en una
+/// sesión duradera, porque un refresh además tiene que existir como fila; y con la
+/// del refresh no se firma ningún acceso.
 ///
-/// Con [`comprobar`] llamada desde [`crate::preparar`], la misma falta se
-/// convierte en un servicio que no arranca y dice por qué. Un servicio de
-/// identidad que no puede firmar sesiones no tiene un modo degradado en el que
-/// sirva de algo.
+/// El pimiento del refresh es defensa en profundidad, no la barrera principal: la
+/// barrera es que el token tiene 512 bits de entropía. Lo que añade es que un
+/// volcado de la tabla, por sí solo, ya no permite ni siquiera comprobar si un
+/// token concreto estuvo ahí.
 ///
-/// ## Por qué no hay valor por defecto
+/// ## Por qué no hay valor por defecto para ninguna
 ///
 /// Una clave de reserva es una clave conocida: quien tenga el código firma sus
 /// propios tokens y entra como quien quiera. Es preferible no arrancar.
 ///
-/// Se cachea en un [`OnceLock`] porque se usa en cada petición y `env::var`
-/// reserva memoria en cada llamada.
-static SECRETO: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+/// Se cachean en un `OnceLock` porque se usan en cada petición y `env::var` reserva
+/// memoria en cada llamada.
+static ACCESO: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
+static PIMIENTO_REFRESH: std::sync::OnceLock<Vec<u8>> = std::sync::OnceLock::new();
 
-/// El mínimo en bytes. HS256 usa una clave de 256 bits, así que menos de 32
-/// bytes es una clave más corta que el hash que produce.
+/// El mínimo en bytes. HS256 y HMAC-SHA256 usan una clave de 256 bits, así que
+/// menos de 32 bytes es una clave más corta que el hash que produce.
 const MINIMO: usize = 32;
 
-/// Comprueba que la clave está y sirve. **Se llama al arrancar.**
+/// Comprueba que las dos claves están y sirven. **Se llama al arrancar.**
 ///
 /// Devuelve el motivo en vez de abortar para que quien la llame decida: al
 /// integrarse en otro binario, quién y cómo se para es cosa suya.
-pub fn comprobar_jwt_secret() -> Result<(), String> {
-    let bruto = env::var("JWT_SECRET")
-        .map_err(|_| "falta JWT_SECRET: sin ella no se pueden firmar sesiones".to_string())?;
+///
+/// Se comprueban **las dos** aunque falle la primera... no: se corta en la primera,
+/// y a propósito. Un arranque que enumera todo lo que falta suena útil y en la
+/// práctica invita a rellenarlas a medias; una cada vez deja el mensaje corto y sin
+/// ambigüedad sobre qué toca ahora.
+pub fn comprobar_secretos() -> Result<(), String> {
+    let acceso = leer_secreto("JWT_ACCESS_SECRET")?;
+    let pimiento = leer_secreto("REFRESH_TOKEN_PEPPER")?;
+
+    // Que sean la misma cadena anula el motivo de tenerlas separadas, y es un error
+    // fácil de cometer copiando el `.env` de al lado.
+    if acceso == pimiento {
+        return Err(
+            "JWT_ACCESS_SECRET y REFRESH_TOKEN_PEPPER son iguales: separarlas es todo el \
+             sentido de que sean dos"
+                .to_string(),
+        );
+    }
+
+    let _ = ACCESO.set(acceso);
+    let _ = PIMIENTO_REFRESH.set(pimiento);
+    Ok(())
+}
+
+fn leer_secreto(nombre: &str) -> Result<Vec<u8>, String> {
+    let bruto = env::var(nombre)
+        .map_err(|_| format!("falta {nombre}: sin ella no se pueden emitir sesiones"))?;
 
     let bruto = bruto.trim();
     if bruto.len() < MINIMO {
         return Err(format!(
-            "JWT_SECRET tiene {} bytes y hacen falta {MINIMO} como mínimo (openssl rand -base64 48)",
+            "{nombre} tiene {} bytes y hacen falta {MINIMO} como mínimo (openssl rand -base64 48)",
             bruto.len()
         ));
     }
 
-    let _ = SECRETO.set(bruto.as_bytes().to_vec());
-    Ok(())
+    Ok(bruto.as_bytes().to_vec())
 }
 
-/// La clave, ya validada.
+/// La clave que firma y verifica el token de acceso, ya comprobada.
 ///
-/// El `expect` de aquí **no es el de antes**: aquel saltaba por una variable de
-/// entorno que faltaba, o sea por algo que pasa de verdad. Este solo puede saltar
-/// si alguien atiende peticiones sin haber llamado a [`crate::preparar`], que es
-/// un error de programación y no de despliegue.
-pub fn jwt_secret() -> &'static [u8] {
-    SECRETO
+/// El `expect` solo puede saltar si alguien atiende peticiones sin haber llamado a
+/// [`crate::preparar`], que es un error de programación y no de despliegue.
+pub fn jwt_access_secret() -> &'static [u8] {
+    ACCESO
         .get()
-        .expect("jwt_secret() antes de preparar(): la clave no se ha comprobado")
+        .expect("jwt_access_secret() antes de preparar(): la clave no se ha comprobado")
+}
+
+/// La clave con la que se resume el token de refresco, ya comprobada.
+pub fn refresh_pepper() -> &'static [u8] {
+    PIMIENTO_REFRESH
+        .get()
+        .expect("refresh_pepper() antes de preparar(): la clave no se ha comprobado")
 }

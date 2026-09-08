@@ -1,4 +1,5 @@
 use crate::crates::*;
+use hmac::{Hmac, Mac};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Claims {
@@ -41,7 +42,7 @@ pub fn create_jwt(
     encode(
         &Header::default(),
         &claims,
-        &EncodingKey::from_secret(crate::config::jwt_secret()),
+        &EncodingKey::from_secret(crate::config::jwt_access_secret()),
     )
 }
 
@@ -116,6 +117,31 @@ pub fn create_auth_cookie(token: &str) -> Cookie<'static> {
         .finish()
 }
 
+/// El resumen con el que un token de refresco se busca y se guarda.
+///
+/// **HMAC-SHA256 con `REFRESH_TOKEN_PEPPER`, no un SHA-256 pelado.** El token tiene
+/// 512 bits de entropía, así que un resumen sin clave ya era irreversible; lo que
+/// añade el pimiento es que un volcado de `auth.refresh_tokens` no permita ni
+/// siquiera **comprobar** si un token concreto estuvo ahí. Sin clave, quien tenga la
+/// tabla y sospeche de un token solo tiene que hashearlo y buscarlo.
+///
+/// Estaba escrito tres veces —al emitir, al refrescar y al cerrar sesión—, y las
+/// tres tenían que coincidir carácter a carácter o el token dejaba de encontrarse.
+/// Eso es una función, no un patrón que copiar.
+///
+/// Cambiar el pimiento invalida todos los refrescos vivos: las sesiones abiertas se
+/// caen al login. Es la propiedad que se quiere de una clave que se rota.
+pub fn resumen_refresh(token: &str) -> String {
+    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(crate::config::refresh_pepper())
+        .expect("HMAC acepta una clave de cualquier tamaño");
+    mac.update(token.as_bytes());
+    mac.finalize()
+        .into_bytes()
+        .iter()
+        .map(|b| format!("{b:02x}"))
+        .collect()
+}
+
 // Generar refresh token aleatorio
 pub fn generate_refresh_token() -> (String, String) {
     let mut bytes = [0u8; 64];
@@ -125,9 +151,7 @@ pub fn generate_refresh_token() -> (String, String) {
     // un valor por defecto oculto.
     let token = BASE64_STANDARD.encode(bytes);
 
-    let mut hasher = Sha256::new();
-    hasher.update(&token);
-    let token_hash = format!("{:x}", hasher.finalize());
+    let token_hash = resumen_refresh(&token);
 
     (token, token_hash)
 }
@@ -181,10 +205,7 @@ pub async fn refresh_token(
             .ok_or_else(|| actix_web::error::ErrorUnauthorized("No refresh token"))?;
         let refresh_token_value = refresh_cookie.value();
 
-        // Hash del token
-        let mut hasher = Sha256::new();
-        hasher.update(refresh_token_value);
-        let token_hash = format!("{:x}", hasher.finalize());
+        let token_hash = resumen_refresh(refresh_token_value);
 
         // Buscar en DB
         let record = sqlx::query!(
@@ -226,9 +247,7 @@ pub async fn refresh_token(
 // Funcion de deslogueo
     pub async fn logout(req: HttpRequest, pool: web::Data<PgPool>) -> HttpResponse {
         if let Some(c) = req.cookie("refresh_token") {
-            let mut hasher = Sha256::new();
-            hasher.update(c.value());
-            let token_hash = format!("{:x}", hasher.finalize());
+            let token_hash = resumen_refresh(c.value());
 
             let _ = sqlx::query!(
                 "UPDATE auth.refresh_tokens SET revoked = true WHERE token_hash = $1",

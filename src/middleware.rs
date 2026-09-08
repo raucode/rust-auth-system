@@ -46,7 +46,7 @@ pub fn validar_token(token: &str) -> Result<Claims, jsonwebtoken::errors::Error>
 
     decode::<Claims>(
         token,
-        &DecodingKey::from_secret(crate::config::jwt_secret()),
+        &DecodingKey::from_secret(crate::config::jwt_access_secret()),
         &validation,
     )
     .map(|data| data.claims)

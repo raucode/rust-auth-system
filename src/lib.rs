@@ -52,6 +52,7 @@ pub mod config;
 pub mod crates;
 pub mod db;
 pub mod middleware;
+pub mod passwords;
 pub mod rbac;
 pub mod servicios;
 pub mod users;
@@ -105,7 +106,7 @@ pub static MIGRACIONES: sqlx::migrate::Migrator = sqlx::migrate!("./migrations")
 /// es nuestro es que no se pueda olvidar — por eso la comprobación vive aquí y no
 /// en una función suelta que haya que acordarse de llamar.
 pub async fn preparar(pool: &PgPool) -> Result<web::Data<Matriz>, String> {
-    config::comprobar_jwt_secret()?;
+    config::comprobar_secretos()?;
 
     bootstrap::crear_admin_si_falta(pool).await;
 
